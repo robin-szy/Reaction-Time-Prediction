@@ -1,0 +1,9 @@
+# This is the `requirements.txt` file we will use to assess all assignments.
+# You can test it yourself by running `pip install -r requirements.txt` in a new virtual environment.
+
+torch>=2.4.0
+numpy>=2.2.0
+scikit-learn>=1.6
+pandas>=2.2.3
+
+# If you plan to use other libraries please create your own `requirements.txt` file and put it in the ZIP file.
