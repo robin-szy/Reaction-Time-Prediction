@@ -1,4 +1,6 @@
 scanpaths/
+scanpaths_split/
 *.csv
 .venv/
+.idea/
 .git/
