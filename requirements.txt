@@ -5,5 +5,6 @@ torch>=2.4.0
 numpy>=2.2.0
 scikit-learn>=1.6
 pandas>=2.2.3
+scipy>=1.17
 
 # If you plan to use other libraries please create your own `requirements.txt` file and put it in the ZIP file.
