@@ -13,7 +13,7 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from scipy.spatial import ConvexHull
 
 # Todo:
-# Nextup: First change log1p and test -> I did this and already send it to HPC server. See if better than results_only_seq.csv
+# Nextup: First change log1p and test
 # Then try to baseline
 
 # Todo:
