@@ -12,6 +12,14 @@ from torch.nn.utils.rnn import pack_padded_sequence
 # Libraries that are not in standard requirements.txt
 from scipy.spatial import ConvexHull
 
+# Testing
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.neural_network import MLPRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, HistGradientBoostingRegressor
+
 # Todo:
 # Nextup: First change log1p and test -> I did this and already send it to HPC server. See if better than results_only_seq.csv
 # Then try to baseline
@@ -85,6 +93,110 @@ def parse_args():
     parser.add_argument("--huber-delta", type=float, default=1.0)
     parser.add_argument("--bidirectional", action="store_true")
     return parser.parse_args()
+
+# Todo: Deleteme
+def run_global_baselines(args):
+    set_seed(args.seed)
+
+    items = load_items(args.data_dir, args.metadata_file, args.scanpath_dir)
+    random.shuffle(items)
+
+    split = int((1.0 - args.val_frac) * len(items))
+    train_items = items[:split]
+    val_items = items[split:]
+
+    def build_xy(items):
+        X, y = [], []
+        for path, label in items:
+            _, g = read_sequence(path, args.seq_max_len)
+            X.append(g)
+            y.append(label)
+        return np.stack(X), np.array(y, dtype=np.float32)
+
+    X_train, y_train = build_xy(train_items)
+    X_val, y_val = build_xy(val_items)
+
+    print("Global feature shape:", X_train.shape)
+
+    # 1. Mean predictor
+    mean_pred = np.full_like(y_val, y_train.mean())
+    mean_rmse = np.sqrt(mean_squared_error(y_val, mean_pred))
+    mean_mae = mean_absolute_error(y_val, mean_pred)
+
+    print(f"Mean baseline | RMSE={mean_rmse:.4f} | MAE={mean_mae:.4f}")
+
+    models = {
+        "LinearRegression": make_pipeline(
+            StandardScaler(),
+            LinearRegression()
+        ),
+        "Ridge_alpha_1": make_pipeline(
+            StandardScaler(),
+            Ridge(alpha=1.0)
+        ),
+        "Ridge_alpha_10": make_pipeline(
+            StandardScaler(),
+            Ridge(alpha=10.0)
+        ),
+        "MLP_16": make_pipeline(
+            StandardScaler(),
+            MLPRegressor(
+                hidden_layer_sizes=(16,),
+                activation="relu",
+                alpha=1e-3,
+                learning_rate_init=1e-3,
+                max_iter=2000,
+                random_state=args.seed,
+                early_stopping=True,
+            )
+        ),
+        "MLP_32_16": make_pipeline(
+            StandardScaler(),
+            MLPRegressor(
+                hidden_layer_sizes=(32, 16),
+                activation="relu",
+                alpha=1e-3,
+                learning_rate_init=1e-3,
+                max_iter=2000,
+                random_state=args.seed,
+                early_stopping=True,
+            )
+        ),
+        "RandomForest": RandomForestRegressor(
+            n_estimators=500,
+            max_depth=8,
+            min_samples_leaf=5,
+            random_state=args.seed,
+            n_jobs=-1,
+        ),
+
+        "GradientBoosting": GradientBoostingRegressor(
+            n_estimators=500,
+            learning_rate=0.03,
+            max_depth=3,
+            subsample=0.8,
+            random_state=args.seed,
+        ),
+
+        "HistGradientBoosting": HistGradientBoostingRegressor(
+            max_iter=500,
+            learning_rate=0.03,
+            max_leaf_nodes=31,
+            min_samples_leaf=20,
+            l2_regularization=0.01,
+            random_state=args.seed,
+        ),
+    }
+
+    for name, model in models.items():
+        model.fit(X_train, y_train)
+        pred = model.predict(X_val)
+        pred = np.maximum(pred, 0.0)
+
+        rmse = np.sqrt(mean_squared_error(y_val, pred))
+        mae = mean_absolute_error(y_val, pred)
+
+        print(f"{name:16s} | RMSE={rmse:.4f} | MAE={mae:.4f}")
 
 
 # -----------------
@@ -469,16 +581,7 @@ class HybridGRURegressor(nn.Module):
         self.num_directions = 2 if bidirectional else 1
         gru_output_size = hidden_size * self.num_directions
 
-        """
         self.gru = nn.GRU(
-            input_size=seq_input_size,
-            hidden_size=hidden_size,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=bidirectional,
-        )"""
-
-        self.rnn = nn.LSTM(     # Todo: Change back to GRU?
             input_size=seq_input_size,
             hidden_size=hidden_size,
             num_layers=1,
@@ -506,8 +609,7 @@ class HybridGRURegressor(nn.Module):
             enforce_sorted=False
         )
 
-        # _, h = self.gru(packed)
-        _, (h, c) = self.rnn(packed)    # Todo: change back?
+        _, h = self.gru(packed)
 
         if self.bidirectional:
             h_last = torch.cat([h[-2], h[-1]], dim=1)
@@ -518,8 +620,7 @@ class HybridGRURegressor(nn.Module):
         combined = h_last   # Todo: Delete. Test only sequential
         raw = self.fc(combined).squeeze(1)
 
-        #return self.out(raw)
-        return raw  # Todo: Change back. log-label
+        return self.out(raw)
 
 # -----------------
 # Training
@@ -701,7 +802,7 @@ def train(args):
     # Summary for HPC testing (to not open every log file every time)
     results_file = "runs/results.csv"
     row = {
-        "model_file": args.model_file,
+        "model_file": os.path.basename(args.model_file),
         "hidden_size": args.hidden_size,
         "lr": args.lr,
         "weight_decay": args.weight_decay,
@@ -809,4 +910,5 @@ def load_and_predict(directory, model_file):
 
 
 if __name__ == "__main__":
-    train(parse_args())
+    #train(parse_args())
+    run_global_baselines(parse_args())
