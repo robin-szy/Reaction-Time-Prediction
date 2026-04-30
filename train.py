@@ -1,3 +1,9 @@
+# Homework in Deep Learning: Reaction time prediction from scanpaths
+# Author: Robin Szymanski
+# I hereby declare that I have used an LLM (ChatGPT, model GPT-5.3) to assist me with
+# some passages of the code, to get new ideas, and especially to assist me with training
+# on the HPC server.
+
 import os
 import glob
 import random
@@ -14,18 +20,13 @@ from scipy.spatial import ConvexHull
 
 
 # Todo:
-# - log1p reaction time and convert back instead of softplus
-# - Pool over time:
-#   - masked mean pooling, or
-#   - attention pooling
-# - What is total saccade length, mean saccade length?
-# - fixation_index / total_fixations (relative position)
-# - No need to normalize coordinates, right? They are already in [0, 1]
-# - Gradient clipping
-
-"""
-
-"""
+# We have 3 top models:
+#bn2_gd50_a100_s42,32,0.001,0.001,32,0.1,42,huber,1,False,80,15,2,0.5,1.0,0
+#bn6_gd50_a100_s42,32,0.001,0.001,32,0.1,42,huber,1,False,80,15,6,0.5,1.0,0
+#bn12_gd10_a100_s42,32,0.001,0.001,32,0.1,42,huber,1,False,80,15,12,0.1,1.0,0
+# Double check the load and predict
+# zip the files, test with newest torch versions and the minimum ones
+# Submit
 
 
 # -------------------------
@@ -286,7 +287,7 @@ def read_sequence(path, seq_max_len):
     # Global features
 
     # Length of sequence
-    n = len(df) # Todo: Maybe remove, because dur_sum might be even better. Corr 0.89% between the two, so I keep it for now.
+    n = len(df)
     n_log = np.log1p(n)     # Also skewed
 
     # Distance features
@@ -459,12 +460,12 @@ class HybridGRURegressor(nn.Module):
             bidirectional=bidirectional,
         )
 
-        self.global_proj = nn.Sequential(   # Todo: Bottleneck
+        self.global_proj = nn.Sequential(
             nn.Linear(global_input_size, bottleneck_dim),
             nn.ReLU()
         )
 
-        self.fc = nn.Sequential(    # Todo: Bottleneck
+        self.fc = nn.Sequential(
             nn.LayerNorm(gru_output_size + bottleneck_dim),
             nn.Linear(gru_output_size + bottleneck_dim, 32),
             nn.ReLU(),
@@ -472,10 +473,10 @@ class HybridGRURegressor(nn.Module):
             nn.Linear(32, 1),
         )
 
-        self.global_dropout = nn.Dropout(global_dropout)   # Todo: Bottleneck
+        self.global_dropout = nn.Dropout(global_dropout)
 
         """
-        self.fc = nn.Sequential(    # Todo: Only sequential
+        self.fc = nn.Sequential(    # Only sequential
             nn.LayerNorm(gru_output_size),
             nn.Linear(gru_output_size, 32),
             nn.ReLU(),
@@ -484,7 +485,7 @@ class HybridGRURegressor(nn.Module):
         )"""
 
         """
-        self.fc = nn.Sequential(    # Todo: Standard global
+        self.fc = nn.Sequential(    # Standard global
             nn.LayerNorm(gru_output_size + global_input_size),
             nn.Linear(gru_output_size + global_input_size, 32),
             nn.ReLU(),
@@ -509,14 +510,13 @@ class HybridGRURegressor(nn.Module):
         else:
             h_last = h[-1]
 
-        # Todo: Global
         global_features = self.global_dropout(global_features)
         g = self.global_proj(global_features)
         g = global_alpha * g
         combined = torch.cat([h_last, g], dim=1)
         raw = self.fc(combined).squeeze(1)
 
-        #raw = self.fc(h_last).squeeze(1)    # Todo: Sequential only
+        #raw = self.fc(h_last).squeeze(1)    # Sequential only
 
         return self.out(raw)
 
@@ -532,6 +532,8 @@ def train(args):
     random.shuffle(items)
 
     if args.final_train:
+        print(
+            "FINAL TRAINING MODE: Model is trained on validation and test set. No validation metrics or early stopping are used during training.")
         train_items = items
         val_items = []
     else:
@@ -697,7 +699,8 @@ def train(args):
 
         else:
             print(
-                f"epoch {epoch + 1:03d} : "
+                f"epoch {epoch + 1:03d} "
+                f"FINAL TRAINING |"
                 f"train_loss={train_loss:.4f}"
             )
 
@@ -792,7 +795,7 @@ def evaluate(model, loader, device, loss_fn, global_alpha=1.0):
 
             # Prediction
             #pred = model(x, lengths, g)
-            pred = model(x, lengths, g, global_alpha=global_alpha)  # Todo: Warmup
+            pred = model(x, lengths, g, global_alpha=global_alpha)
 
             # Loss
             loss = loss_fn(pred, y)
@@ -807,6 +810,93 @@ def evaluate(model, loader, device, loss_fn, global_alpha=1.0):
     mae = total_abs_error / max(total, 1)
 
     return avg_loss, rmse, mae
+
+
+def test_on_labeled_set(test_dir="scanpaths/test",
+                        labels_file="scanpaths/test_labels.csv",
+                        model_file="model.pth"):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    checkpoint = torch.load(model_file, map_location=device, weights_only=True)
+
+    model = HybridGRURegressor(
+        hidden_size=int(checkpoint["hidden_size"]),
+        seq_input_size=int(checkpoint["seq_input_size"]),
+        global_input_size=int(checkpoint["global_input_size"]),
+        dropout=float(checkpoint.get("dropout", 0.0)),
+        bidirectional=bool(checkpoint.get("bidirectional", False)),
+        bottleneck_dim=int(checkpoint.get("bottleneck_dim", 4)),
+        global_dropout=float(checkpoint.get("global_dropout", 0.3)),
+    ).to(device)
+
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+
+    seq_max_len = int(checkpoint["seq_max_len"])
+    seq_mean = checkpoint["seq_mean"].cpu().numpy()
+    seq_std = checkpoint["seq_std"].cpu().numpy()
+    global_mean = checkpoint["global_mean"].cpu().numpy()
+    global_std = checkpoint["global_std"].cpu().numpy()
+    global_alpha = float(checkpoint.get("global_alpha", 1.0))
+
+    labels = pd.read_csv(
+        labels_file,
+        sep=r"\s+",
+        header=None,
+        names=["reaction_time", "filename"],
+        engine="python",
+    )
+
+    y_true = []
+    y_pred = []
+    rows = []
+
+    with torch.no_grad():
+        for _, row in labels.iterrows():
+            path = os.path.join(test_dir, str(row["filename"]))
+            if not os.path.exists(path):
+                print(f"Missing file, skipped: {path}")
+                continue
+
+            true_rt = float(row["reaction_time"])
+
+            seq, global_features = read_sequence(path, seq_max_len)
+            seq = (seq - seq_mean) / seq_std
+            global_features = (global_features - global_mean) / global_std
+
+            x = torch.tensor(seq, dtype=torch.float32).unsqueeze(0).to(device)
+            lengths = torch.tensor([len(seq)], dtype=torch.long).to(device)
+            g = torch.tensor(global_features, dtype=torch.float32).unsqueeze(0).to(device)
+
+            pred_rt = model(x, lengths, g, global_alpha=global_alpha).item()
+
+            y_true.append(true_rt)
+            y_pred.append(pred_rt)
+
+            rows.append({
+                "filename": row["filename"],
+                "true_rt": true_rt,
+                "pred_rt": float(pred_rt),
+                "abs_error": abs(pred_rt - true_rt),
+                "sq_error": (pred_rt - true_rt) ** 2,
+            })
+
+    y_true = np.array(y_true, dtype=np.float32)
+    y_pred = np.array(y_pred, dtype=np.float32)
+
+    rmse = float(np.sqrt(np.mean((y_pred - y_true) ** 2)))
+    mae = float(np.mean(np.abs(y_pred - y_true)))
+
+    print(f"Test samples: {len(y_true)}")
+    print(f"Test RMSE: {rmse:.4f}")
+    print(f"Test MAE:  {mae:.4f}")
+
+    return {
+        "rmse": rmse,
+        "mae": mae,
+        "n": len(y_true),
+        "predictions": pd.DataFrame(rows),
+    }
 
 
 
@@ -867,3 +957,13 @@ def load_and_predict(directory, model_file):
 
 if __name__ == "__main__":
     train(parse_args())
+    """
+    # For testing final models
+    for model_file in sorted(glob.glob("runs/*.pth")):
+    print("\n", model_file)
+    test_on_labeled_set(
+        test_dir="scanpaths/test",
+        labels_file="scanpaths/test_labels.csv",
+        model_file=model_file,
+    )
+    """
