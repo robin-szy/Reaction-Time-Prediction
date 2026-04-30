@@ -12,17 +12,6 @@ from torch.nn.utils.rnn import pack_padded_sequence
 # Libraries that are not in standard requirements.txt
 from scipy.spatial import ConvexHull
 
-# Testing
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression, Ridge
-from sklearn.neural_network import MLPRegressor
-from sklearn.metrics import mean_squared_error, mean_absolute_error
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, HistGradientBoostingRegressor
-
-# Todo:
-# Nextup: First change log1p and test -> I did this and already send it to HPC server. See if better than results_only_seq.csv
-# Then try to baseline
 
 # Todo:
 # - log1p reaction time and convert back instead of softplus
@@ -35,35 +24,7 @@ from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, H
 # - Gradient clipping
 
 """
-Baseline:
-Before any deep model, fit:
-- Predict the mean RT (sanity check)
-- Linear regression on [num_fixations, total_duration, mean_duration]
-- Gradient boosting on hand-crafted aggregate features
-If your neural net doesn't beat that, something's wrong.
-"""
 
-"""
-Linear(6 → 64)
-BiGRU(input_size=64, hidden_size=128, num_layers=2, bidirectional=True)
-masked mean or attention pooling over time (or last hidden)
-Linear(256 → 64) → ReLU → Dropout
-Linear(64 → 1)
-
-Loss: Huber or MAE
-log1p reaction time instead of softplus
-"""
-
-"""
-Features: (x, y, log_dur, dx, dy, sacc_amp, sin_θ, cos_θ, cum_time)
-Model:    Linear(d→128) → BiGRU(2 layers, 128) → AttentionPool → MLP → 1
-Output:   log(RT), exp() at inference
-Loss:     MSE on log(RT)
-Optim:    AdamW(1e-3), grad-clip 1.0, dropout 0.3
-"""
-
-"""
-Conv1d + global pooling + MLP.
 """
 
 
@@ -77,7 +38,7 @@ def parse_args():
     parser.add_argument("--metadata-file", default="scanpaths_metadata.csv")
     parser.add_argument("--scanpath-dir", default="scanpaths/train_val")
     parser.add_argument("--model-file", default="model.pth")
-    parser.add_argument("--epochs", type=int, default=120)
+    parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--weight-decay", type=float, default=0.001)
@@ -92,111 +53,12 @@ def parse_args():
                         choices=["huber", "mse", "smoothl1", "mae"])
     parser.add_argument("--huber-delta", type=float, default=1.0)
     parser.add_argument("--bidirectional", action="store_true")
+    parser.add_argument("--bottleneck-dim", type=int, default=10)
+    parser.add_argument("--global-dropout", type=float, default=0.1)
+    parser.add_argument("--global-alpha", type=float, default=1.0)
+    parser.add_argument("--global-warmup", type=int, default=0)
+    parser.add_argument("--final-train", action="store_true")
     return parser.parse_args()
-
-# Todo: Deleteme
-def run_global_baselines(args):
-    set_seed(args.seed)
-
-    items = load_items(args.data_dir, args.metadata_file, args.scanpath_dir)
-    random.shuffle(items)
-
-    split = int((1.0 - args.val_frac) * len(items))
-    train_items = items[:split]
-    val_items = items[split:]
-
-    def build_xy(items):
-        X, y = [], []
-        for path, label in items:
-            _, g = read_sequence(path, args.seq_max_len)
-            X.append(g)
-            y.append(label)
-        return np.stack(X), np.array(y, dtype=np.float32)
-
-    X_train, y_train = build_xy(train_items)
-    X_val, y_val = build_xy(val_items)
-
-    print("Global feature shape:", X_train.shape)
-
-    # 1. Mean predictor
-    mean_pred = np.full_like(y_val, y_train.mean())
-    mean_rmse = np.sqrt(mean_squared_error(y_val, mean_pred))
-    mean_mae = mean_absolute_error(y_val, mean_pred)
-
-    print(f"Mean baseline | RMSE={mean_rmse:.4f} | MAE={mean_mae:.4f}")
-
-    models = {
-        "LinearRegression": make_pipeline(
-            StandardScaler(),
-            LinearRegression()
-        ),
-        "Ridge_alpha_1": make_pipeline(
-            StandardScaler(),
-            Ridge(alpha=1.0)
-        ),
-        "Ridge_alpha_10": make_pipeline(
-            StandardScaler(),
-            Ridge(alpha=10.0)
-        ),
-        "MLP_16": make_pipeline(
-            StandardScaler(),
-            MLPRegressor(
-                hidden_layer_sizes=(16,),
-                activation="relu",
-                alpha=1e-3,
-                learning_rate_init=1e-3,
-                max_iter=2000,
-                random_state=args.seed,
-                early_stopping=True,
-            )
-        ),
-        "MLP_32_16": make_pipeline(
-            StandardScaler(),
-            MLPRegressor(
-                hidden_layer_sizes=(32, 16),
-                activation="relu",
-                alpha=1e-3,
-                learning_rate_init=1e-3,
-                max_iter=2000,
-                random_state=args.seed,
-                early_stopping=True,
-            )
-        ),
-        "RandomForest": RandomForestRegressor(
-            n_estimators=500,
-            max_depth=8,
-            min_samples_leaf=5,
-            random_state=args.seed,
-            n_jobs=-1,
-        ),
-
-        "GradientBoosting": GradientBoostingRegressor(
-            n_estimators=500,
-            learning_rate=0.03,
-            max_depth=3,
-            subsample=0.8,
-            random_state=args.seed,
-        ),
-
-        "HistGradientBoosting": HistGradientBoostingRegressor(
-            max_iter=500,
-            learning_rate=0.03,
-            max_leaf_nodes=31,
-            min_samples_leaf=20,
-            l2_regularization=0.01,
-            random_state=args.seed,
-        ),
-    }
-
-    for name, model in models.items():
-        model.fit(X_train, y_train)
-        pred = model.predict(X_val)
-        pred = np.maximum(pred, 0.0)
-
-        rmse = np.sqrt(mean_squared_error(y_val, pred))
-        mae = mean_absolute_error(y_val, pred)
-
-        print(f"{name:16s} | RMSE={rmse:.4f} | MAE={mae:.4f}")
 
 
 # -----------------
@@ -390,23 +252,32 @@ def read_sequence(path, seq_max_len):
     dist = np.sqrt(dx ** 2 + dy ** 2).astype(np.float32)
     dist_log = np.log1p(dist)
 
+    dt = np.diff(dur, prepend=dur[0])
+    speed = dist / (np.abs(dt) + 1e-6)
+    speed = np.clip(speed, 0.0, 20.0)
+    speed_log = np.log1p(speed)
+
     angle = np.arctan2(dy, dx)
     angle_sin = np.sin(angle).astype(np.float32)
     angle_cos = np.cos(angle).astype(np.float32)
     angle_unwrapped = np.unwrap(angle)
     dangle = np.diff(angle_unwrapped, prepend=angle_unwrapped[0]).astype(np.float32)
+    cum_time = np.cumsum(dur).astype(np.float32)
 
     seq = np.stack(
         [
             x,
             y,
-            dx,
-            dy,
+            #dx,
+            #dy,
+            dt,
+            speed_log,
             dist_log,
             angle_sin,
             angle_cos,
             dangle,
             dur_log,
+            cum_time
         ],
         axis=1,
     ).astype(np.float32)
@@ -546,8 +417,7 @@ class ScanpathDataset(Dataset):
         return (
             torch.tensor(seq, dtype=torch.float32),
             torch.tensor(global_features, dtype=torch.float32),
-            #torch.tensor(label, dtype=torch.float32),
-            torch.tensor(np.log1p(label), dtype=torch.float32)  # Todo: change back. log-label
+            torch.tensor(label, dtype=torch.float32),
         )
 
 
@@ -573,7 +443,7 @@ def collate_batch(batch):
 class HybridGRURegressor(nn.Module):
     # The input sizes so I don't have to adapt the size every time when I add/remove a feature
     def __init__(self, hidden_size, seq_input_size, global_input_size,
-                 dropout=0.05, bidirectional=False):
+                 dropout=0.05, bidirectional=False, bottleneck_dim=4, global_dropout=0.3):
         super().__init__()
 
         self.bidirectional = bidirectional
@@ -589,19 +459,42 @@ class HybridGRURegressor(nn.Module):
             bidirectional=bidirectional,
         )
 
-        self.fc = nn.Sequential(
-            #nn.LayerNorm(gru_output_size + global_input_size),
-            #nn.Linear(gru_output_size + global_input_size, 32),
-            nn.LayerNorm(hidden_size * self.num_directions),    # Todo: Delete. Test only sequential
-            nn.Linear(hidden_size * self.num_directions, 32),
+        self.global_proj = nn.Sequential(   # Todo: Bottleneck
+            nn.Linear(global_input_size, bottleneck_dim),
+            nn.ReLU()
+        )
+
+        self.fc = nn.Sequential(    # Todo: Bottleneck
+            nn.LayerNorm(gru_output_size + bottleneck_dim),
+            nn.Linear(gru_output_size + bottleneck_dim, 32),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(32, 1),
         )
 
+        self.global_dropout = nn.Dropout(global_dropout)   # Todo: Bottleneck
+
+        """
+        self.fc = nn.Sequential(    # Todo: Only sequential
+            nn.LayerNorm(gru_output_size),
+            nn.Linear(gru_output_size, 32),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(32, 1),
+        )"""
+
+        """
+        self.fc = nn.Sequential(    # Todo: Standard global
+            nn.LayerNorm(gru_output_size + global_input_size),
+            nn.Linear(gru_output_size + global_input_size, 32),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(32, 1),
+        )"""
+
         self.out = nn.Softplus()
 
-    def forward(self, x, lengths, global_features):
+    def forward(self, x, lengths, global_features, global_alpha=1.0):
         packed = pack_padded_sequence(
             x,
             lengths.cpu(),
@@ -616,9 +509,14 @@ class HybridGRURegressor(nn.Module):
         else:
             h_last = h[-1]
 
-        #combined = torch.cat([h_last, global_features], dim=1)
-        combined = h_last   # Todo: Delete. Test only sequential
+        # Todo: Global
+        global_features = self.global_dropout(global_features)
+        g = self.global_proj(global_features)
+        g = global_alpha * g
+        combined = torch.cat([h_last, g], dim=1)
         raw = self.fc(combined).squeeze(1)
+
+        #raw = self.fc(h_last).squeeze(1)    # Todo: Sequential only
 
         return self.out(raw)
 
@@ -632,12 +530,17 @@ def train(args):
 
     items = load_items(args.data_dir, args.metadata_file, args.scanpath_dir)
     random.shuffle(items)
-    split = int((1.0 - args.val_frac) * len(items))
-    train_items = items[:split]
-    val_items = items[split:]
 
-    if not train_items or not val_items:
-        raise ValueError("Train/validation split failed. Check data size and --val-frac.")
+    if args.final_train:
+        train_items = items
+        val_items = []
+    else:
+        split = int((1.0 - args.val_frac) * len(items))
+        train_items = items[:split]
+        val_items = items[split:]
+
+        if not train_items or not val_items:
+            raise ValueError("Train/validation split failed. Check data size and --val-frac.")
 
     # Global means for normalization
     global_mean, global_std = compute_global_norm(train_items, args.seq_max_len)
@@ -652,15 +555,6 @@ def train(args):
         seq_std=seq_std
     )
 
-    val_dataset = ScanpathDataset(
-        val_items,
-        seq_max_len=args.seq_max_len,
-        global_mean=global_mean,
-        global_std=global_std,
-        seq_mean=seq_mean,
-        seq_std=seq_std
-    )
-
     # Load datasets
     train_loader = DataLoader(
         train_dataset,
@@ -668,12 +562,26 @@ def train(args):
         shuffle=True,
         collate_fn=collate_batch
     )
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
-        collate_fn=collate_batch
-    )
+
+    if not args.final_train:
+
+        val_dataset = ScanpathDataset(
+            val_items,
+            seq_max_len=args.seq_max_len,
+            global_mean=global_mean,
+            global_std=global_std,
+            seq_mean=seq_mean,
+            seq_std=seq_std
+        )
+
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            collate_fn=collate_batch
+        )
+    else:
+        val_loader = None
 
     model = HybridGRURegressor(
         hidden_size=args.hidden_size,
@@ -681,6 +589,8 @@ def train(args):
         global_input_size=len(global_mean),
         dropout=args.dropout,
         bidirectional=args.bidirectional,
+        bottleneck_dim=args.bottleneck_dim,
+        global_dropout=args.global_dropout,
     ).to(device)
 
 
@@ -722,10 +632,18 @@ def train(args):
         )
 
     best_rmse = float("inf")
+    best_mae = None
     best_state = None
     epochs_without_improvement = 0
 
     for epoch in range(args.epochs):
+
+        if epoch < args.global_warmup:  # Hard warmup
+            global_alpha = 0.0
+        else:
+            global_alpha = args.global_alpha
+            #global_alpha = min(1.0, (epoch + 1) / warmup_epochs)    # Soft warmup
+
         model.train()
         total_train_loss, total_train = 0.0, 0
 
@@ -736,7 +654,8 @@ def train(args):
             y = y.to(device)
 
             optimizer.zero_grad()
-            pred = model(x, lengths, g)
+            #pred = model(x, lengths, g)
+            pred = model(x, lengths, g, global_alpha=global_alpha)
             loss = loss_fn(pred, y)
             loss.backward()
             optimizer.step()
@@ -746,37 +665,55 @@ def train(args):
 
         train_loss = total_train_loss / max(total_train, 1)
 
-        val_loss, val_rmse = evaluate(
-            model=model,
-            loader=val_loader,
-            device=device,
-            loss_fn=loss_fn
-        )
+        if not args.final_train:
+            val_loss, val_rmse, val_mae = evaluate(
+                model=model,
+                loader=val_loader,
+                device=device,
+                loss_fn=loss_fn,
+                global_alpha=global_alpha,
+            )
 
-        improved = val_rmse < best_rmse - args.min_delta
-        if improved:
-            best_rmse = val_rmse
-            best_state = {
-                k: v.detach().cpu().clone()
-                for k, v in model.state_dict().items()
-            }
-            epochs_without_improvement = 0
+            improved = val_rmse < best_rmse - args.min_delta
+            if improved:
+                best_rmse = val_rmse
+                best_mae = val_mae
+                best_state = {
+                    k: v.detach().cpu().clone()
+                    for k, v in model.state_dict().items()
+                }
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+
+            print(
+                f"epoch {epoch + 1:03d} : "
+                f"train_loss={train_loss:.4f} "
+                f"val_loss={val_loss:.4f} "
+                f"val_rmse={val_rmse:.4f} "
+                f"val_mae={val_mae:.4f} "
+                f"best_rmse={best_rmse:.4f}"
+            )
+
         else:
-            epochs_without_improvement += 1
+            print(
+                f"epoch {epoch + 1:03d} : "
+                f"train_loss={train_loss:.4f}"
+            )
 
-        print(
-            f"epoch {epoch + 1:03d} | "
-            f"train_loss={train_loss:.4f} "
-            f"val_loss={val_loss:.4f} "
-            f"val_rmse={val_rmse:.4f} "
-            f"best_rmse={best_rmse:.4f}"
-        )
 
-        if epochs_without_improvement >= args.patience:
+        # No early stopping during final training
+        if not args.final_train and epochs_without_improvement >= args.patience:
             print(f"Early stopping at epoch {epoch + 1}. "
                   f"Best val RMSE={best_rmse:.4f}"
                   )
             break
+
+    if args.final_train:    # The best model is the last model during final training
+        best_state = {
+            k: v.detach().cpu().clone()
+            for k, v in model.state_dict().items()
+        }
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -794,15 +731,24 @@ def train(args):
         "seq_std": torch.tensor(seq_std, dtype=torch.float32),
         "huber_delta": args.huber_delta,
         "bidirectional": bool(args.bidirectional),
+        "bottleneck_dim": args.bottleneck_dim,
+        "global_dropout": args.global_dropout,
+        "global_alpha": args.global_alpha,
+        "global_warmup": args.global_warmup,
     }
 
     torch.save(checkpoint, args.model_file)
-    print(f"Saved best model to {args.model_file} with RMSE={best_rmse:.4f}")
+    if args.final_train:
+        print(f"Saved final model to {args.model_file}")
+    else:
+        print(
+            f"Saved best model to {args.model_file} with RMSE={best_rmse:.4f}")
 
     # Summary for HPC testing (to not open every log file every time)
     results_file = "runs/results.csv"
     row = {
         "model_file": os.path.basename(args.model_file),
+        "final_train": args.final_train,
         "hidden_size": args.hidden_size,
         "lr": args.lr,
         "weight_decay": args.weight_decay,
@@ -810,10 +756,16 @@ def train(args):
         #"batch_size": args.batch_size,
         "dropout": args.dropout,
         "seed": args.seed,
+        "loss": args.loss,
         "huber_delta": args.huber_delta,
         "bidirectional": args.bidirectional,
+        "bottleneck_dim": args.bottleneck_dim,
+        "global_dropout": args.global_dropout,
+        "global_alpha": args.global_alpha,
+        "global_warmup": args.global_warmup,
         "total_params": total_params,
-        "best_rmse": best_rmse,
+        "best_mae": best_mae if not args.final_train else None,
+        "best_rmse": best_rmse if not args.final_train else None,
     }
 
     os.makedirs(os.path.dirname(results_file), exist_ok=True)
@@ -827,9 +779,9 @@ def train(args):
 # -----------------
 # Evaluation
 # -----------------
-def evaluate(model, loader, device, loss_fn):
+def evaluate(model, loader, device, loss_fn, global_alpha=1.0):
     model.eval()
-    total_loss, total_sq_error, total = 0.0, 0.0, 0
+    total_loss, total_sq_error, total_abs_error, total = 0.0, 0.0, 0.0, 0
 
     with torch.no_grad():
         for x, lengths, g, y in loader:
@@ -840,22 +792,21 @@ def evaluate(model, loader, device, loss_fn):
 
             # Prediction
             #pred = model(x, lengths, g)
-            # Todo: Change back. log-label
-            pred_log = model(x, lengths, g)
-            pred = torch.expm1(pred_log)
-            y_true = torch.expm1(y)
+            pred = model(x, lengths, g, global_alpha=global_alpha)  # Todo: Warmup
 
             # Loss
             loss = loss_fn(pred, y)
             total_loss += float(loss.item()) * len(y)
 
-            #total_sq_error += float(torch.sum((pred - y) ** 2).item())
-            total_sq_error += float(torch.sum((pred - y_true) ** 2).item())     # Todo: Change back. log-label
+            total_sq_error += float(torch.sum((pred - y) ** 2).item())
+            total_abs_error += float(torch.sum(torch.abs(pred - y)).item())
             total += len(y)
 
     avg_loss = total_loss / max(total, 1)
     rmse = np.sqrt(total_sq_error / max(total, 1))
-    return avg_loss, rmse
+    mae = total_abs_error / max(total, 1)
+
+    return avg_loss, rmse, mae
 
 
 
@@ -870,6 +821,9 @@ def load_and_predict(directory, model_file):
     seq_input_size = int(checkpoint["seq_input_size"])
     global_input_size = int(checkpoint["global_input_size"])
     bidirectional = bool(checkpoint.get("bidirectional", False))
+    bottleneck_dim = int(checkpoint.get("bottleneck_dim", 4))
+    global_dropout = float(checkpoint.get("global_dropout", 0.3))
+    global_alpha = float(checkpoint.get("global_alpha", 1.0))
 
     model = HybridGRURegressor(
         hidden_size=hidden_size,
@@ -877,6 +831,8 @@ def load_and_predict(directory, model_file):
         global_input_size=global_input_size,
         dropout=dropout,
         bidirectional=bidirectional,
+        bottleneck_dim=bottleneck_dim,
+        global_dropout=global_dropout,
     ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
@@ -903,12 +859,11 @@ def load_and_predict(directory, model_file):
             lengths = torch.tensor([len(seq)], dtype=torch.long).to(device)
             g = torch.tensor(global_features, dtype=torch.float32).unsqueeze(0).to(device)
 
-            pred = model(x, lengths, g).item()
+            pred = model(x, lengths, g, global_alpha=global_alpha).item()
             pred_dict[os.path.abspath(path)] = float(pred)
 
     return pred_dict
 
 
 if __name__ == "__main__":
-    #train(parse_args())
-    run_global_baselines(parse_args())
+    train(parse_args())

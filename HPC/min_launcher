@@ -1,0 +1,20 @@
+#!/bin/bash -l
+#SBATCH --job-name=benchmark_test
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=7
+#SBATCH --partition=batch
+#SBATCH --qos=normal
+#SBATCH --time=0-02:00:00
+#SBATCH --output=logs/baraa_test.out
+#SBATCH --error=logs/baraa_test.err
+
+module --force purge
+module load env/development/2025a
+module load lang/Python/3.13.1-GCCcore-14.2.0
+
+source $HOME/deep_learning/DL_env_latest/bin/activate
+
+cd $HOME/deep_learning/reaction_time_HW
+
+python -u train.py

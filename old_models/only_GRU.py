@@ -12,6 +12,16 @@ from torch.nn.utils.rnn import pack_padded_sequence
 # Libraries that are not in standard requirements.txt
 from scipy.spatial import ConvexHull
 
+# Testing
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.neural_network import MLPRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, HistGradientBoostingRegressor
+
+# Todo:
+# Inculde speed
 
 # Todo:
 # - log1p reaction time and convert back instead of softplus
@@ -53,10 +63,6 @@ def parse_args():
                         choices=["huber", "mse", "smoothl1", "mae"])
     parser.add_argument("--huber-delta", type=float, default=1.0)
     parser.add_argument("--bidirectional", action="store_true")
-    parser.add_argument("--bottleneck-dim", type=int, default=4)
-    parser.add_argument("--global-dropout", type=float, default=0.3)
-    parser.add_argument("--global-alpha", type=float, default=1.0)
-    parser.add_argument("--global-warmup", type=int, default=0)
     return parser.parse_args()
 
 
@@ -442,7 +448,7 @@ def collate_batch(batch):
 class HybridGRURegressor(nn.Module):
     # The input sizes so I don't have to adapt the size every time when I add/remove a feature
     def __init__(self, hidden_size, seq_input_size, global_input_size,
-                 dropout=0.05, bidirectional=False, bottleneck_dim=4, global_dropout=0.3):
+                 dropout=0.05, bidirectional=False):
         super().__init__()
 
         self.bidirectional = bidirectional
@@ -458,42 +464,19 @@ class HybridGRURegressor(nn.Module):
             bidirectional=bidirectional,
         )
 
-        self.global_proj = nn.Sequential(   # Todo: Bottleneck
-            nn.Linear(global_input_size, bottleneck_dim),
-            nn.ReLU()
-        )
-
-        self.fc = nn.Sequential(    # Todo: Bottleneck
-            nn.LayerNorm(gru_output_size + bottleneck_dim),
-            nn.Linear(gru_output_size + bottleneck_dim, 32),
+        self.fc = nn.Sequential(
+            #nn.LayerNorm(gru_output_size + global_input_size),
+            #nn.Linear(gru_output_size + global_input_size, 32),
+            nn.LayerNorm(hidden_size * self.num_directions),    # Todo: Delete. Test only sequential
+            nn.Linear(hidden_size * self.num_directions, 32),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(32, 1),
         )
-
-        self.global_dropout = nn.Dropout(global_dropout)   # Todo: Bottleneck
-
-        """
-        self.fc = nn.Sequential(    # Todo: Only sequential
-            nn.LayerNorm(gru_output_size),
-            nn.Linear(gru_output_size, 32),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(32, 1),
-        )"""
-
-        """
-        self.fc = nn.Sequential(    # Todo: Standard global
-            nn.LayerNorm(gru_output_size + global_input_size),
-            nn.Linear(gru_output_size + global_input_size, 32),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(32, 1),
-        )"""
 
         self.out = nn.Softplus()
 
-    def forward(self, x, lengths, global_features, global_alpha=1.0):
+    def forward(self, x, lengths, global_features):
         packed = pack_padded_sequence(
             x,
             lengths.cpu(),
@@ -508,14 +491,9 @@ class HybridGRURegressor(nn.Module):
         else:
             h_last = h[-1]
 
-        # Todo: Global
-        global_features = self.global_dropout(global_features)
-        g = self.global_proj(global_features)
-        g = global_alpha * g
-        combined = torch.cat([h_last, g], dim=1)
+        #combined = torch.cat([h_last, global_features], dim=1)
+        combined = h_last   # Todo: Delete. Test only sequential
         raw = self.fc(combined).squeeze(1)
-
-        #raw = self.fc(h_last).squeeze(1)    # Todo: Sequential only
 
         return self.out(raw)
 
@@ -578,8 +556,6 @@ def train(args):
         global_input_size=len(global_mean),
         dropout=args.dropout,
         bidirectional=args.bidirectional,
-        bottleneck_dim=args.bottleneck_dim,
-        global_dropout=args.global_dropout,
     ).to(device)
 
 
@@ -626,13 +602,6 @@ def train(args):
     epochs_without_improvement = 0
 
     for epoch in range(args.epochs):
-
-        if epoch < args.global_warmup:  # Hard warmup
-            global_alpha = 0.0
-        else:
-            global_alpha = args.global_alpha
-            #global_alpha = min(1.0, (epoch + 1) / warmup_epochs)    # Soft warmup
-
         model.train()
         total_train_loss, total_train = 0.0, 0
 
@@ -643,8 +612,7 @@ def train(args):
             y = y.to(device)
 
             optimizer.zero_grad()
-            #pred = model(x, lengths, g)
-            pred = model(x, lengths, g, global_alpha=global_alpha)  # Todo: Warmup
+            pred = model(x, lengths, g)
             loss = loss_fn(pred, y)
             loss.backward()
             optimizer.step()
@@ -658,8 +626,7 @@ def train(args):
             model=model,
             loader=val_loader,
             device=device,
-            loss_fn=loss_fn,
-            global_alpha=global_alpha,
+            loss_fn=loss_fn
         )
 
         improved = val_rmse < best_rmse - args.min_delta
@@ -675,8 +642,7 @@ def train(args):
             epochs_without_improvement += 1
 
         print(
-            f"epoch {epoch + 1:03d} : "
-            f"global_alpha={global_alpha:.2f} | "
+            f"epoch {epoch + 1:03d} | "
             f"train_loss={train_loss:.4f} "
             f"val_loss={val_loss:.4f} "
             f"val_rmse={val_rmse:.4f} "
@@ -706,10 +672,6 @@ def train(args):
         "seq_std": torch.tensor(seq_std, dtype=torch.float32),
         "huber_delta": args.huber_delta,
         "bidirectional": bool(args.bidirectional),
-        "bottleneck_dim": args.bottleneck_dim,
-        "global_dropout": args.global_dropout,
-        "global_alpha": args.global_alpha,
-        "global_warmup": args.global_warmup,
     }
 
     torch.save(checkpoint, args.model_file)
@@ -726,13 +688,9 @@ def train(args):
         #"batch_size": args.batch_size,
         "dropout": args.dropout,
         "seed": args.seed,
-        "loss": args.loss,
+        #"loss": args.loss,
         "huber_delta": args.huber_delta,
         "bidirectional": args.bidirectional,
-        "bottleneck_dim": args.bottleneck_dim,
-        "global_dropout": args.global_dropout,
-        "global_alpha": args.global_alpha,
-        "global_warmup": args.global_warmup,
         "total_params": total_params,
         "best_mae": best_mae,
         "best_rmse": best_rmse,
@@ -749,7 +707,7 @@ def train(args):
 # -----------------
 # Evaluation
 # -----------------
-def evaluate(model, loader, device, loss_fn, global_alpha=1.0):
+def evaluate(model, loader, device, loss_fn):
     model.eval()
     total_loss, total_sq_error, total_abs_error, total = 0.0, 0.0, 0.0, 0
 
@@ -761,8 +719,7 @@ def evaluate(model, loader, device, loss_fn, global_alpha=1.0):
             y = y.to(device)
 
             # Prediction
-            #pred = model(x, lengths, g)
-            pred = model(x, lengths, g, global_alpha=global_alpha)  # Todo: Warmup
+            pred = model(x, lengths, g)
 
             # Loss
             loss = loss_fn(pred, y)
@@ -791,9 +748,6 @@ def load_and_predict(directory, model_file):
     seq_input_size = int(checkpoint["seq_input_size"])
     global_input_size = int(checkpoint["global_input_size"])
     bidirectional = bool(checkpoint.get("bidirectional", False))
-    bottleneck_dim = int(checkpoint.get("bottleneck_dim", 4))
-    global_dropout = float(checkpoint.get("global_dropout", 0.3))
-    global_alpha = float(checkpoint.get("global_alpha", 1.0))
 
     model = HybridGRURegressor(
         hidden_size=hidden_size,
@@ -801,8 +755,6 @@ def load_and_predict(directory, model_file):
         global_input_size=global_input_size,
         dropout=dropout,
         bidirectional=bidirectional,
-        bottleneck_dim=bottleneck_dim,
-        global_dropout=global_dropout,
     ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
@@ -829,7 +781,7 @@ def load_and_predict(directory, model_file):
             lengths = torch.tensor([len(seq)], dtype=torch.long).to(device)
             g = torch.tensor(global_features, dtype=torch.float32).unsqueeze(0).to(device)
 
-            pred = model(x, lengths, g, global_alpha=global_alpha).item()
+            pred = model(x, lengths, g).item()
             pred_dict[os.path.abspath(path)] = float(pred)
 
     return pred_dict

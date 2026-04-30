@@ -1,6 +1,9 @@
 scanpaths/
 scanpaths_split/
+forbidden_entire_scanpaths/
+trial_scripts/
 *.csv
 .venv/
 .idea/
 .git/
+*.pth
