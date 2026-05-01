@@ -7,3 +7,4 @@ trial_scripts/
 .idea/
 .git/
 *.pth
+*.zip

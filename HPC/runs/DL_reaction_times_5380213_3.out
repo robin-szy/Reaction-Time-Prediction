@@ -1,0 +1,70 @@
+======================================
+SLURM job id:        5380213
+SLURM array task:    3
+Host:                iris-183
+Date:                Fri May  1 07:06:27 CEST 2026
+Project dir:         /home/users/rszymanski/deep_learning/reaction_time_HW
+Data dir:            /home/users/rszymanski/deep_learning/reaction_time_HW/scanpaths
+Run name:            GPU_final_bn12_gd10_a100_s523
+Model file:          /home/users/rszymanski/deep_learning/reaction_time_HW/runs/GPU_final_bn12_gd10_a100_s523.pth
+Hidden size:         32
+LR:                  0.001
+Weight decay:        0.001
+Batch size:          32
+Dropout:             0.1
+Seed:                523
+CUDA available:
+True
+Tesla V100-SXM2-16GB
+======================================
+FINAL TRAINING MODE: Model is trained on validation and test set. No validation metrics or early stopping are used during training.
+Total parameters: 5965
+Parameters per layer:
+gru.weight_ih_l0 960
+gru.weight_hh_l0 3072
+gru.bias_ih_l0 96
+gru.bias_hh_l0 96
+global_proj.0.weight 168
+global_proj.0.bias 12
+fc.0.weight 44
+fc.0.bias 44
+fc.1.weight 1408
+fc.1.bias 32
+fc.4.weight 32
+fc.4.bias 1
+epoch 001 FINAL TRAINING |train_loss=1.2585
+epoch 002 FINAL TRAINING |train_loss=0.4506
+epoch 003 FINAL TRAINING |train_loss=0.4244
+epoch 004 FINAL TRAINING |train_loss=0.4164
+epoch 005 FINAL TRAINING |train_loss=0.4146
+epoch 006 FINAL TRAINING |train_loss=0.4047
+epoch 007 FINAL TRAINING |train_loss=0.3965
+epoch 008 FINAL TRAINING |train_loss=0.3980
+epoch 009 FINAL TRAINING |train_loss=0.3801
+epoch 010 FINAL TRAINING |train_loss=0.3811
+epoch 011 FINAL TRAINING |train_loss=0.3789
+epoch 012 FINAL TRAINING |train_loss=0.3750
+epoch 013 FINAL TRAINING |train_loss=0.3725
+epoch 014 FINAL TRAINING |train_loss=0.3580
+epoch 015 FINAL TRAINING |train_loss=0.3706
+epoch 016 FINAL TRAINING |train_loss=0.3563
+epoch 017 FINAL TRAINING |train_loss=0.3595
+epoch 018 FINAL TRAINING |train_loss=0.3589
+epoch 019 FINAL TRAINING |train_loss=0.3529
+epoch 020 FINAL TRAINING |train_loss=0.3481
+epoch 021 FINAL TRAINING |train_loss=0.3362
+epoch 022 FINAL TRAINING |train_loss=0.3515
+epoch 023 FINAL TRAINING |train_loss=0.3401
+epoch 024 FINAL TRAINING |train_loss=0.3339
+epoch 025 FINAL TRAINING |train_loss=0.3445
+epoch 026 FINAL TRAINING |train_loss=0.3374
+epoch 027 FINAL TRAINING |train_loss=0.3298
+epoch 028 FINAL TRAINING |train_loss=0.3292
+epoch 029 FINAL TRAINING |train_loss=0.3276
+epoch 030 FINAL TRAINING |train_loss=0.3273
+epoch 031 FINAL TRAINING |train_loss=0.3277
+epoch 032 FINAL TRAINING |train_loss=0.3191
+epoch 033 FINAL TRAINING |train_loss=0.3093
+Saved final model to /home/users/rszymanski/deep_learning/reaction_time_HW/runs/GPU_final_bn12_gd10_a100_s523.pth
+Finished run: GPU_final_bn12_gd10_a100_s523
+Saved model: /home/users/rszymanski/deep_learning/reaction_time_HW/runs/GPU_final_bn12_gd10_a100_s523.pth

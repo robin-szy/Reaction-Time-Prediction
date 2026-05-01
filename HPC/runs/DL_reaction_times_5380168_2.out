@@ -1,0 +1,76 @@
+======================================
+SLURM job id:        5380170
+SLURM array task:    2
+Host:                iris-183
+Date:                Fri May  1 06:36:51 CEST 2026
+Project dir:         /home/users/rszymanski/deep_learning/reaction_time_HW
+Data dir:            /home/users/rszymanski/deep_learning/reaction_time_HW/scanpaths
+Run name:            GPU_final_bn6_gd50_a100_s42
+Model file:          /home/users/rszymanski/deep_learning/reaction_time_HW/runs/GPU_final_bn6_gd50_a100_s42.pth
+Hidden size:         32
+LR:                  0.001
+Weight decay:        0.001
+Batch size:          32
+Dropout:             0.1
+Seed:                523
+CUDA available:
+True
+Tesla V100-SXM2-16GB
+======================================
+Total parameters: 5671
+Parameters per layer:
+gru.weight_ih_l0 960
+gru.weight_hh_l0 3072
+gru.bias_ih_l0 96
+gru.bias_hh_l0 96
+global_proj.0.weight 84
+global_proj.0.bias 6
+fc.0.weight 38
+fc.0.bias 38
+fc.1.weight 1216
+fc.1.bias 32
+fc.4.weight 32
+fc.4.bias 1
+epoch 001 : train_loss=1.7562 val_loss=0.6703 val_rmse=1.3389 val_mae=1.0724 best_rmse=1.3389
+epoch 002 : train_loss=0.5309 val_loss=0.4031 val_rmse=1.0679 val_mae=0.7504 best_rmse=1.0679
+epoch 003 : train_loss=0.4549 val_loss=0.3734 val_rmse=1.0035 val_mae=0.7193 best_rmse=1.0035
+epoch 004 : train_loss=0.4408 val_loss=0.3535 val_rmse=0.9807 val_mae=0.7026 best_rmse=0.9807
+epoch 005 : train_loss=0.4354 val_loss=0.3555 val_rmse=0.9889 val_mae=0.6910 best_rmse=0.9807
+epoch 006 : train_loss=0.4104 val_loss=0.3375 val_rmse=0.9844 val_mae=0.6552 best_rmse=0.9807
+epoch 007 : train_loss=0.4168 val_loss=0.3864 val_rmse=1.0813 val_mae=0.7001 best_rmse=0.9807
+epoch 008 : train_loss=0.4076 val_loss=0.3651 val_rmse=1.0477 val_mae=0.6764 best_rmse=0.9807
+epoch 009 : train_loss=0.4056 val_loss=0.3357 val_rmse=0.9681 val_mae=0.6673 best_rmse=0.9681
+epoch 010 : train_loss=0.3898 val_loss=0.3431 val_rmse=0.9585 val_mae=0.6845 best_rmse=0.9585
+epoch 011 : train_loss=0.3990 val_loss=0.3340 val_rmse=0.9470 val_mae=0.6673 best_rmse=0.9470
+epoch 012 : train_loss=0.3941 val_loss=0.3259 val_rmse=0.9498 val_mae=0.6524 best_rmse=0.9470
+epoch 013 : train_loss=0.3805 val_loss=0.3341 val_rmse=0.9838 val_mae=0.6409 best_rmse=0.9470
+epoch 014 : train_loss=0.3747 val_loss=0.3287 val_rmse=0.9561 val_mae=0.6489 best_rmse=0.9470
+epoch 015 : train_loss=0.3795 val_loss=0.3495 val_rmse=0.9489 val_mae=0.7029 best_rmse=0.9470
+epoch 016 : train_loss=0.3788 val_loss=0.3282 val_rmse=0.9360 val_mae=0.6579 best_rmse=0.9360
+epoch 017 : train_loss=0.3713 val_loss=0.3201 val_rmse=0.9373 val_mae=0.6401 best_rmse=0.9360
+epoch 018 : train_loss=0.3672 val_loss=0.3229 val_rmse=0.9387 val_mae=0.6454 best_rmse=0.9360
+epoch 019 : train_loss=0.3606 val_loss=0.3379 val_rmse=0.9457 val_mae=0.6711 best_rmse=0.9360
+epoch 020 : train_loss=0.3596 val_loss=0.3285 val_rmse=0.9392 val_mae=0.6584 best_rmse=0.9360
+epoch 021 : train_loss=0.3592 val_loss=0.3219 val_rmse=0.9371 val_mae=0.6470 best_rmse=0.9360
+epoch 022 : train_loss=0.3559 val_loss=0.3234 val_rmse=0.9383 val_mae=0.6455 best_rmse=0.9360
+epoch 023 : train_loss=0.3529 val_loss=0.3240 val_rmse=0.9417 val_mae=0.6498 best_rmse=0.9360
+epoch 024 : train_loss=0.3476 val_loss=0.3169 val_rmse=0.9338 val_mae=0.6266 best_rmse=0.9338
+epoch 025 : train_loss=0.3472 val_loss=0.3212 val_rmse=0.9559 val_mae=0.6240 best_rmse=0.9338
+epoch 026 : train_loss=0.3408 val_loss=0.3209 val_rmse=0.9501 val_mae=0.6367 best_rmse=0.9338
+epoch 027 : train_loss=0.3441 val_loss=0.3189 val_rmse=0.9411 val_mae=0.6246 best_rmse=0.9338
+epoch 028 : train_loss=0.3393 val_loss=0.3293 val_rmse=0.9371 val_mae=0.6623 best_rmse=0.9338
+epoch 029 : train_loss=0.3391 val_loss=0.3195 val_rmse=0.9341 val_mae=0.6415 best_rmse=0.9338
+epoch 030 : train_loss=0.3258 val_loss=0.3176 val_rmse=0.9435 val_mae=0.6270 best_rmse=0.9338
+epoch 031 : train_loss=0.3340 val_loss=0.3211 val_rmse=0.9470 val_mae=0.6301 best_rmse=0.9338
+epoch 032 : train_loss=0.3296 val_loss=0.3231 val_rmse=0.9423 val_mae=0.6474 best_rmse=0.9338
+epoch 033 : train_loss=0.3343 val_loss=0.3258 val_rmse=0.9400 val_mae=0.6490 best_rmse=0.9338
+epoch 034 : train_loss=0.3226 val_loss=0.3227 val_rmse=0.9498 val_mae=0.6288 best_rmse=0.9338
+epoch 035 : train_loss=0.3271 val_loss=0.3221 val_rmse=0.9366 val_mae=0.6441 best_rmse=0.9338
+epoch 036 : train_loss=0.3181 val_loss=0.3199 val_rmse=0.9385 val_mae=0.6386 best_rmse=0.9338
+epoch 037 : train_loss=0.3250 val_loss=0.3261 val_rmse=0.9578 val_mae=0.6313 best_rmse=0.9338
+epoch 038 : train_loss=0.3274 val_loss=0.3279 val_rmse=0.9414 val_mae=0.6516 best_rmse=0.9338
+epoch 039 : train_loss=0.3169 val_loss=0.3360 val_rmse=0.9387 val_mae=0.6713 best_rmse=0.9338
+Early stopping at epoch 39. Best val RMSE=0.9338
+Saved best model to /home/users/rszymanski/deep_learning/reaction_time_HW/runs/GPU_final_bn6_gd50_a100_s42.pth with RMSE=0.9338
+Finished run: GPU_final_bn6_gd50_a100_s42
+Saved model: /home/users/rszymanski/deep_learning/reaction_time_HW/runs/GPU_final_bn6_gd50_a100_s42.pth

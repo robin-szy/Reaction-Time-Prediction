@@ -1,9 +1,15 @@
 # Homework in Deep Learning: Reaction time prediction from scanpaths
 # Author: Robin Szymanski
 
+# I hereby declare that I have used an LLM (ChatGPT, model GPT-5.3) to assist me with
+# some small passages of the code, debugging, improve some readability, to get new ideas,
+# and especially to assist me with training on the HPC server (by generating configs for
+# hyperparameter sweeps).
+# This is in accordance with the "Guidelines on the Use of Generative AI for
+# Teaching and Learning", Version: 1.0, Date: 2026-02-16
 
 import os
-import glob
+import glob     # Used for testing, therefore still imported
 import random
 import argparse
 import numpy as np
@@ -17,16 +23,6 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from scipy.spatial import ConvexHull
 
 
-# Todo:
-# We have 3 top models:
-#bn2_gd50_a100_s42,32,0.001,0.001,32,0.1,42,huber,1,False,80,15,2,0.5,1.0,0
-#bn6_gd50_a100_s42,32,0.001,0.001,32,0.1,42,huber,1,False,80,15,6,0.5,1.0,0
-#bn12_gd10_a100_s42,32,0.001,0.001,32,0.1,42,huber,1,False,80,15,12,0.1,1.0,0
-# Double check the load and predict
-# zip the files, test with newest torch versions and the minimum ones
-# Also train once in new environment, see if works
-# Submit
-
 
 # -------------------------
 # Arguments for parsing
@@ -36,15 +32,15 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", default=".")
     parser.add_argument("--metadata-file", default="scanpaths_metadata.csv")
-    parser.add_argument("--scanpath-dir", default="scanpaths/train_val")
+    parser.add_argument("--scanpath-dir", default="scanpaths")
     parser.add_argument("--model-file", default="model.pth")
-    parser.add_argument("--epochs", type=int, default=33)
+    parser.add_argument("--epochs", type=int, default=37)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--weight-decay", type=float, default=0.001)
     parser.add_argument("--seq-max-len", type=int, default=512)
     parser.add_argument("--hidden-size", type=int, default=32)
-    parser.add_argument("--patience", type=int, default=150)
+    parser.add_argument("--patience", type=int, default=15)
     parser.add_argument("--min-delta", type=float, default=1e-4)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=523)
@@ -52,7 +48,7 @@ def parse_args():
     parser.add_argument("--loss", type=str, default="huber",
                         choices=["huber", "mse", "smoothl1", "mae"])
     parser.add_argument("--huber-delta", type=float, default=1.0)
-    parser.add_argument("--bidirectional", action="store_true")
+    parser.add_argument("--bidirectional", action="store_true", default=False)
     parser.add_argument("--bottleneck-dim", type=int, default=2)
     parser.add_argument("--global-dropout", type=float, default=0.5)
     parser.add_argument("--global-alpha", type=float, default=1.0)
@@ -697,7 +693,7 @@ def train(args):
         else:
             print(
                 f"epoch {epoch + 1:03d} "
-                f"FINAL TRAINING |"
+                f"FINAL TRAINING | "
                 f"train_loss={train_loss:.4f}"
             )
 
@@ -809,9 +805,14 @@ def evaluate(model, loader, device, loss_fn, global_alpha=1.0):
     return avg_loss, rmse, mae
 
 
+
+# -----------------
+# Final testing
+# -----------------
 def test_on_labeled_set(test_dir="scanpaths/test",
                         labels_file="scanpaths/test_labels.csv",
                         model_file="model.pth"):
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     checkpoint = torch.load(model_file, map_location=device, weights_only=True)
@@ -901,13 +902,12 @@ def test_on_labeled_set(test_dir="scanpaths/test",
 if __name__ == "__main__":
     train(parse_args())
 
-    """
     # For testing final models
-    for model_file in sorted(glob.glob("runs/*.pth")):
-        print("\n", model_file)
-        test_on_labeled_set(
-            test_dir="scanpaths/test",
-            labels_file="scanpaths/test_labels.csv",
-            model_file=model_file,
-        )
-    """
+    # for model_file in sorted(glob.glob("runs/*.pth")):
+    #     print("\n", model_file)
+    #     test_on_labeled_set(
+    #         test_dir="scanpaths/test",
+    #         labels_file="scanpaths/test_labels.csv",
+    #         model_file=model_file,
+    #     )
+

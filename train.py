@@ -1,11 +1,15 @@
 # Homework in Deep Learning: Reaction time prediction from scanpaths
 # Author: Robin Szymanski
+
 # I hereby declare that I have used an LLM (ChatGPT, model GPT-5.3) to assist me with
-# some passages of the code, to get new ideas, and especially to assist me with training
-# on the HPC server.
+# some small passages of the code, debugging, improve some readability, to get new ideas,
+# and especially to assist me with training on the HPC server (by generating configs for
+# hyperparameter sweeps).
+# This is in accordance with the "Guidelines on the Use of Generative AI for
+# Teaching and Learning", Version: 1.0, Date: 2026-02-16
 
 import os
-import glob
+import glob     # Used for testing, therefore still imported
 import random
 import argparse
 import numpy as np
@@ -19,15 +23,6 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from scipy.spatial import ConvexHull
 
 
-# Todo:
-# We have 3 top models:
-#bn2_gd50_a100_s42,32,0.001,0.001,32,0.1,42,huber,1,False,80,15,2,0.5,1.0,0
-#bn6_gd50_a100_s42,32,0.001,0.001,32,0.1,42,huber,1,False,80,15,6,0.5,1.0,0
-#bn12_gd10_a100_s42,32,0.001,0.001,32,0.1,42,huber,1,False,80,15,12,0.1,1.0,0
-# Double check the load and predict
-# zip the files, test with newest torch versions and the minimum ones
-# Submit
-
 
 # -------------------------
 # Arguments for parsing
@@ -37,15 +32,15 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", default=".")
     parser.add_argument("--metadata-file", default="scanpaths_metadata.csv")
-    parser.add_argument("--scanpath-dir", default="scanpaths/train_val")
+    parser.add_argument("--scanpath-dir", default="scanpaths")
     parser.add_argument("--model-file", default="model.pth")
-    parser.add_argument("--epochs", type=int, default=2)
+    parser.add_argument("--epochs", type=int, default=37)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--weight-decay", type=float, default=0.001)
     parser.add_argument("--seq-max-len", type=int, default=512)
     parser.add_argument("--hidden-size", type=int, default=32)
-    parser.add_argument("--patience", type=int, default=20)
+    parser.add_argument("--patience", type=int, default=15)
     parser.add_argument("--min-delta", type=float, default=1e-4)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=523)
@@ -53,12 +48,12 @@ def parse_args():
     parser.add_argument("--loss", type=str, default="huber",
                         choices=["huber", "mse", "smoothl1", "mae"])
     parser.add_argument("--huber-delta", type=float, default=1.0)
-    parser.add_argument("--bidirectional", action="store_true")
-    parser.add_argument("--bottleneck-dim", type=int, default=10)
-    parser.add_argument("--global-dropout", type=float, default=0.1)
+    parser.add_argument("--bidirectional", action="store_true", default=False)
+    parser.add_argument("--bottleneck-dim", type=int, default=2)
+    parser.add_argument("--global-dropout", type=float, default=0.5)
     parser.add_argument("--global-alpha", type=float, default=1.0)
     parser.add_argument("--global-warmup", type=int, default=0)
-    parser.add_argument("--final-train", action="store_true")
+    parser.add_argument("--final-train", action="store_true", default=True)
     return parser.parse_args()
 
 
@@ -73,9 +68,7 @@ def set_seed(seed=42):
 
 
 def safe_std(x):
-    """
-    Just to be robust and avoid any errors.
-    """
+    # Just to be robust and avoid any errors.
     x = np.asarray(x, dtype=np.float32)
     if len(x) <= 1:
         return 0.0
@@ -83,9 +76,7 @@ def safe_std(x):
 
 
 def safe_slope(values):
-    """
-    Just to be robust and avoid any errors.
-    """
+    # Just to be robust and avoid any errors.
     values = np.asarray(values, dtype=np.float32)
     if len(values) <= 1:
         return 0.0
@@ -200,20 +191,20 @@ def direction_consistency_features(dx, dy):
     uy = dy / step_len
 
     cos_sim = ux[:-1] * ux[1:] + uy[:-1] * uy[1:]
-    direction_consistency = np.mean(cos_sim)
+    #direction_consistency = np.mean(cos_sim)
 
     angles = np.arctan2(dy, dx)
     angles_unwrapped = np.unwrap(angles)
-    turns = np.diff(angles_unwrapped)
+    #turns = np.diff(angles_unwrapped)
 
     return float(np.std(angles_unwrapped))
-
-
 
 
 def read_sequence(path, seq_max_len):
 
     """
+    Main function creating all the features (with helper functions)
+
     Insights from data exploration
         * Intuitively: Distance traveled with the eyes could be very indicative. When I search for something (e.g. "the" in a text), my eyes jump a lot around the screen until I find it. Then, when I found it, the last step is quite small. Then you stay on it (longer fixated)
     * Distance:
@@ -240,6 +231,8 @@ def read_sequence(path, seq_max_len):
 
     df = pd.read_csv(path, sep=r"\s+")
     df.columns = [c.upper().strip() for c in df.columns]
+
+    # Sequential features
 
     # During data exploration, I found that duration is heavily right-skewed -> log-transform
     x = df["FPOGX"].to_numpy(dtype=np.float32)
@@ -812,9 +805,14 @@ def evaluate(model, loader, device, loss_fn, global_alpha=1.0):
     return avg_loss, rmse, mae
 
 
+
+# -----------------
+# Final testing
+# -----------------
 def test_on_labeled_set(test_dir="scanpaths/test",
                         labels_file="scanpaths/test_labels.csv",
                         model_file="model.pth"):
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     checkpoint = torch.load(model_file, map_location=device, weights_only=True)
@@ -900,70 +898,16 @@ def test_on_labeled_set(test_dir="scanpaths/test",
 
 
 
-def load_and_predict(directory, model_file):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Load model checkpoint
-    checkpoint = torch.load(model_file, map_location=device, weights_only=True)
-
-    hidden_size = int(checkpoint["hidden_size"])
-    dropout = float(checkpoint.get("dropout", 0.0))
-    seq_input_size = int(checkpoint["seq_input_size"])
-    global_input_size = int(checkpoint["global_input_size"])
-    bidirectional = bool(checkpoint.get("bidirectional", False))
-    bottleneck_dim = int(checkpoint.get("bottleneck_dim", 4))
-    global_dropout = float(checkpoint.get("global_dropout", 0.3))
-    global_alpha = float(checkpoint.get("global_alpha", 1.0))
-
-    model = HybridGRURegressor(
-        hidden_size=hidden_size,
-        seq_input_size=seq_input_size,
-        global_input_size=global_input_size,
-        dropout=dropout,
-        bidirectional=bidirectional,
-        bottleneck_dim=bottleneck_dim,
-        global_dropout=global_dropout,
-    ).to(device)
-    model.load_state_dict(checkpoint["model_state_dict"])
-    model.eval()
-
-    seq_max_len = int(checkpoint["seq_max_len"])
-    global_mean = checkpoint["global_mean"].cpu().numpy()
-    global_std = checkpoint["global_std"].cpu().numpy()
-    seq_mean = checkpoint["seq_mean"].cpu().numpy()
-    seq_std = checkpoint["seq_std"].cpu().numpy()
-
-    pred_dict = {}
-    paths = sorted(glob.glob(os.path.join(directory, "*.csv")))
-
-    with torch.no_grad():
-        for path in paths:
-            # The following function read_sequence performs the two first steps required in eval.py:
-            # (1) Read the data from the provided directory
-            # (2) Prepare the data according to preprocessing pipeline of model training
-            seq, global_features = read_sequence(path, seq_max_len)
-            seq = (seq - seq_mean) / seq_std
-            global_features = (global_features - global_mean) / global_std
-
-            x = torch.tensor(seq, dtype=torch.float32).unsqueeze(0).to(device)
-            lengths = torch.tensor([len(seq)], dtype=torch.long).to(device)
-            g = torch.tensor(global_features, dtype=torch.float32).unsqueeze(0).to(device)
-
-            pred = model(x, lengths, g, global_alpha=global_alpha).item()
-            pred_dict[os.path.abspath(path)] = float(pred)
-
-    return pred_dict
-
 
 if __name__ == "__main__":
     train(parse_args())
-    """
+
     # For testing final models
-    for model_file in sorted(glob.glob("runs/*.pth")):
-    print("\n", model_file)
-    test_on_labeled_set(
-        test_dir="scanpaths/test",
-        labels_file="scanpaths/test_labels.csv",
-        model_file=model_file,
-    )
-    """
+    # for model_file in sorted(glob.glob("runs/*.pth")):
+    #     print("\n", model_file)
+    #     test_on_labeled_set(
+    #         test_dir="scanpaths/test",
+    #         labels_file="scanpaths/test_labels.csv",
+    #         model_file=model_file,
+    #     )
+
